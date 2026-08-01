@@ -1,0 +1,62 @@
+From: iPool bring-up <dev@ipool>
+Date: Mon, 28 Jul 2026 00:00:00 +0000
+Subject: [PATCH] drm/rockchip: lvds: power the LVDS DSI-DPHY at encoder enable
+
+The backported rk3568 LVDS support powered the DSI-DPHY (in LVDS mode)
+at probe time, inside rockchip_lvds_phy_probe(): phy_init +
+phy_set_mode(PHY_MODE_LVDS) + phy_power_on all ran before the VOP2 pixel
+clock (dclk_vp1) was running. The Rockchip vendor BSP instead powers the
+PHY at encoder-enable time, after the CRTC/dclk is live, so the LVDS PHY
+can lock to the incoming pixel clock. Powering it before dclk exists
+leaves it unlocked -> backlight on but no image.
+
+Match the vendor ordering: at probe only get + phy_init the PHY; do
+phy_set_mode + phy_power_on in rk3568_lvds_encoder_enable() after the GRF
+is configured and before enabling the panel.
+
+Downstream (meta-ipool) fix for the RK3568 SZ3568 board's LVDS panel.
+
+Upstream-Status: Inappropriate [depends on the out-of-tree rk3568 LVDS backport]
+---
+ drivers/gpu/drm/rockchip/rockchip_lvds.c | 21 +++++++++------------
+ 1 file changed, 9 insertions(+), 12 deletions(-)
+
+--- a/drivers/gpu/drm/rockchip/rockchip_lvds.c
++++ b/drivers/gpu/drm/rockchip/rockchip_lvds.c
+@@ -503,6 +503,10 @@
+ 		return;
+ 	}
+
++	/* meta-ipool: power the DSI-DPHY (LVDS mode) here, after dclk is live. */
++	phy_set_mode(lvds->dphy, PHY_MODE_LVDS);
++	phy_power_on(lvds->dphy);
++
+ 	drm_panel_enable(lvds->panel);
+ }
+
+@@ -574,21 +578,14 @@
+ static int rockchip_lvds_phy_probe(struct platform_device *pdev,
+ 				   struct rockchip_lvds *lvds)
+ {
+-	int ret;
+-
+ 	lvds->dphy = devm_phy_get(&pdev->dev, "dphy");
+ 	if (IS_ERR(lvds->dphy))
+ 		return PTR_ERR(lvds->dphy);
+
+-	ret = phy_init(lvds->dphy);
+-	if (ret)
+-		return ret;
+-
+-	ret = phy_set_mode(lvds->dphy, PHY_MODE_LVDS);
+-	if (ret)
+-		return ret;
+-
+-	return phy_power_on(lvds->dphy);
++	/* meta-ipool: only init here; set_mode + power_on moved to encoder
++	 * enable (vendor BSP order) so the LVDS PHY powers up AFTER the VOP2
++	 * dclk is live, letting it lock to the pixel clock. */
++	return phy_init(lvds->dphy);
+ }
+
+ static int px30_lvds_probe(struct platform_device *pdev,

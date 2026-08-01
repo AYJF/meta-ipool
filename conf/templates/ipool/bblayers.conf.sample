@@ -1,0 +1,33 @@
+# Copyright (C) 2024 The Qt Company Ltd.
+# SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+#
+# iPool Pilot: RK3568 (SZ3568) layer set — default boot2qt layers plus the
+# Rockchip BSP (meta-rockchip), its meta-arm dependency, and our meta-ipool.
+
+# POKY_BBLAYERS_CONF_VERSION is increased each time build/conf/bblayers.conf
+# changes incompatibly
+POKY_BBLAYERS_CONF_VERSION = "2"
+
+BBPATH = "${TOPDIR}"
+BBFILES ?= ""
+BSPDIR := "${@os.path.abspath(os.path.dirname(d.getVar('FILE')) + '/../..')}"
+
+BBLAYERS ?= " \
+  ${BSPDIR}/sources/openembedded-core/meta \
+  ${BSPDIR}/sources/meta-yocto/meta-poky \
+  ${BSPDIR}/sources/meta-arm/meta-arm-toolchain \
+  ${BSPDIR}/sources/meta-arm/meta-arm \
+  ${BSPDIR}/sources/meta-openembedded/meta-oe \
+  ${BSPDIR}/sources/meta-openembedded/meta-python \
+  ${BSPDIR}/sources/meta-openembedded/meta-networking \
+  ${BSPDIR}/sources/meta-openembedded/meta-initramfs \
+  ${BSPDIR}/sources/meta-openembedded/meta-multimedia \
+  ${BSPDIR}/sources/meta-openembedded/meta-filesystems \
+  ${BSPDIR}/sources/meta-virtualization \
+  ${BSPDIR}/sources/meta-rockchip \
+  ${BSPDIR}/sources/meta-ipool \
+  ${BSPDIR}/sources/meta-boot2qt/meta-boot2qt \
+  ${BSPDIR}/sources/meta-boot2qt/meta-boot2qt-distro \
+  ${BSPDIR}/sources/meta-mingw \
+  ${BSPDIR}/sources/meta-qt6 \
+  "

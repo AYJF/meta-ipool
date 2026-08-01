@@ -1,0 +1,12 @@
+[Unit]
+Description=iPool GPU/EGL bring-up diagnostic (dumps to serial ttyS8)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/gpu-diag.sh
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

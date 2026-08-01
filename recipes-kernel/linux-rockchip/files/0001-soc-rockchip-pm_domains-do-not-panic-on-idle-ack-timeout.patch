@@ -1,0 +1,37 @@
+From: iPool bring-up <dev@ipool>
+Date: Mon, 28 Jul 2026 00:00:00 +0000
+Subject: [PATCH] soc: rockchip: pm_domains: don't panic on idle-ack timeout
+
+The Rockchip 6.1 BSP tree hard-panics in rockchip_pmu_set_idle_request()
+whenever a power domain fails to acknowledge an idle request:
+
+    error:
+        panic("panic_on_set_idle set ...\n");
+
+On the iPool SZ3568, powering the NPU domain (touched during IOMMU init)
+times out on idle-ack, so the board panics during early boot before ever
+reaching userspace. The NPU is unused on this appliance. Upstream simply
+returns the timeout error; do the same so boot continues and only the
+affected device fails to probe.
+
+Downstream (meta-ipool) fix for the RK3568 SZ3568 board.
+
+Upstream-Status: Inappropriate [downstream vendor-tree debug behaviour]
+---
+ drivers/soc/rockchip/pm_domains.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/drivers/soc/rockchip/pm_domains.c
++++ b/drivers/soc/rockchip/pm_domains.c
+@@ -632,7 +632,10 @@
+
+ 	return ret;
+ error:
+-	panic("panic_on_set_idle set ...\n");
++	/* meta-ipool: the vendor tree hard-panics on any PD idle-ack timeout
++	 * (e.g. the unused NPU domain, which won't ack on this board). Upstream
++	 * just returns the error -- do that so boot continues; the affected
++	 * device simply fails to probe instead of killing the kernel. */
+ 	return ret;
+ }
+

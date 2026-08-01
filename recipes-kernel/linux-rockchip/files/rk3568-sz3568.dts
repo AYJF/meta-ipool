@@ -1,0 +1,205 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * iPool Pilot SZ3568 board DT for the Rockchip 6.1 VENDOR kernel (Path B).
+ *
+ * Based on the vendor's proven single-channel-LVDS EVB config
+ * (rk3568-evb1-ddr4-v10-single-channel-lvds.dts): VP1 -> lvds0 -> panel-lvds0,
+ * with video_phy0 (the DSI/LVDS combo DPHY) driven by the mature vendor LVDS
+ * stack. Panel is the 7" 1024x600 24-bit single-link XXR070B4120.
+ *
+ * Uses the -linux base (not android) for boot2qt, and disables the EVB
+ * cameras/ISP/NPU/i2c-touch this board doesn't have (they error/hang the boot).
+ */
+
+#include <dt-bindings/display/media-bus-format.h>
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+#include <dt-bindings/pwm/pwm.h>
+#include "rk3568-evb1-ddr4-v10.dtsi"
+#include "rk3568-linux.dtsi"
+
+/ {
+	model = "iPool SZ3568 (vendor 6.1)";
+	compatible = "rockchip,rk3568-sz3568", "rockchip,rk3568";
+
+	/* 7" 1024x600 24-bit LVDS panel (XXR070B4120).
+	 * NOTE: native RK3568 LVDS is a confirmed DEAD END on this board (hangs the
+	 * mode-set 4 ways). The real path is a DSI->LVDS bridge (TC358775/GM8775C on
+	 * i2c2). This node is kept but left effectively idle (VP1 is occupied by the
+	 * dummy route_dsi0), so it never triggers the hang -- it just parks here as a
+	 * baseline that reaches userspace. Bridge path is the next build. */
+	panel-lvds0 {
+		compatible = "simple-panel";
+		backlight = <&backlight>;
+		power-supply = <&vcc3v3_lcd1_n>;	/* panel VDD = GPIO0_C5 */
+		enable-delay-ms = <20>;
+		prepare-delay-ms = <20>;
+		unprepare-delay-ms = <20>;
+		disable-delay-ms = <20>;
+		/* 24-bit VESA/SPWG mapping; switch to _JEIDA if colours are wrong. */
+		bus-format = <MEDIA_BUS_FMT_RGB888_1X7X4_SPWG>;
+		width-mm = <154>;
+		height-mm = <86>;
+
+		display-timings {
+			native-mode = <&timing0>;
+			timing0: timing0 {
+				clock-frequency = <51200000>;
+				hactive = <1024>;
+				vactive = <600>;
+				hback-porch = <140>;
+				hfront-porch = <160>;
+				hsync-len = <20>;
+				vback-porch = <20>;
+				vfront-porch = <12>;
+				vsync-len = <3>;
+				hsync-active = <0>;
+				vsync-active = <0>;
+				de-active = <0>;
+				pixelclk-active = <0>;
+			};
+		};
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			port@0 {
+				reg = <0>;
+				panel_in_lvds0: endpoint {
+					remote-endpoint = <&lvds0_out_panel>;
+				};
+			};
+		};
+	};
+};
+
+/* Backlight on the LCDBL connector: pwm4 (BL-ADJ) inverted, GPIO0_D5 (BL-EN),
+ * powered from vcc3v3_lcd0_n. Matches the board's original vendor OS. */
+&backlight {
+	status = "okay";
+	/* pwms inherited from rk3568-evb.dtsi: <&pwm4 0 25000 0> (non-inverted),
+	 * exactly as the vendor SZ3568 DTS drives BL-ADJ. Do NOT re-declare with
+	 * PWM_POLARITY_INVERTED -- the board's PWM backlight is non-inverting. */
+	enable-gpios = <&gpio0 RK_PD5 GPIO_ACTIVE_HIGH>;	/* LCDBL BL-EN = GPIO0_D5 */
+	power-supply = <&vcc3v3_lcd0_n>;
+	post-pwm-on-delay-ms = <100>;
+	pwm-off-delay-ms = <10>;
+};
+
+&pwm4 {
+	status = "okay";
+};
+
+/* BASELINE: native LVDS nodes left ENABLED-but-IDLE, exactly as in the one boot
+ * that reached Boot2Qt userspace. They do NOT drive the panel (VP1 is occupied
+ * by the dummy route_dsi0, so LVDS never gets a crtc / never mode-sets). Empirically
+ * this enabled-idle state boots; disabling video_phy0/lvds0 destabilised the boot
+ * (crash/reset at ~10s). Leave as-is until we move to the DSI->LVDS bridge. */
+&lvds0 {
+	status = "okay";
+	ports {
+		port@1 {
+			reg = <1>;
+			lvds0_out_panel: endpoint {
+				remote-endpoint = <&panel_in_lvds0>;
+			};
+		};
+	};
+};
+
+&lvds0_in_vp1 {
+	status = "okay";
+};
+
+/*
+ * route_lvds is the vendor DRM's *boot-time* logo/modeset trigger. Enabling it
+ * made the kernel attempt the full VOP2->LVDS->DPHY mode-set during DRM bind,
+ * and that HARD-HANGS this board (black panel, no backlight, frozen at ~10s) --
+ * the freeze is inside crtc/encoder/phy enable, before the backlight step, so
+ * we never even see BL-EN come on. Keep it DISABLED so the kernel boots to a
+ * Boot2Qt login; we then drive the LVDS mode-set from userspace (modetest, with
+ * drm.debug) where the failure is observable instead of a silent kernel freeze.
+ * The LVDS connector still exists from the OF graph (lvds0 + panel + vp1), the
+ * route node only controls the automatic boot logo.
+ */
+&route_lvds {
+	status = "disabled";
+	connect = <&vp1_out_lvds>;
+};
+
+&lvds1 {
+	status = "disabled";
+};
+
+&video_phy0 {
+	/* Combo MIPI/LVDS DPHY, left OKAY (as in the boot that reached userspace).
+	 * Enabled as a device but not programmed (no LVDS mode-set happens). It is
+	 * ALSO the DPHY the DSI->LVDS bridge path will need, so keep it on. */
+	status = "okay";
+};
+
+&dsi0 {
+	status = "disabled";
+};
+
+&dsi0_in_vp0 {
+	status = "disabled";
+};
+
+&dsi0_in_vp1 {
+	status = "disabled";
+};
+
+/*
+ * KEEP route_dsi0 ENABLED (EVB default). It points VP1 at the (disabled) DSI0
+ * encoder, which harmlessly "occupies" VP1. This turned out to be load-bearing:
+ * the ONE boot that reached Boot2Qt userspace had route_dsi0 okay; the moment we
+ * disabled it (freeing VP1), the vendor DRM crash/reset-loops the SoC at ~10s
+ * during the multimedia/GPU bind -- independent of LVDS (reproduced with the
+ * whole LVDS path disabled). So leave VP1 occupied to keep the board bootable
+ * while we determine the real display path (native LVDS is a confirmed dead end).
+ */
+&route_dsi0 {
+	status = "okay";
+};
+
+/*
+ * NOTE: eDP left at the EVB default (on VP0 alongside HDMI) and DMC left enabled
+ * for this diagnostic boot -- both were present in the last boot that reached
+ * userspace, so leaving them alone means this boot deviates from that known-good
+ * boot by exactly one thing: route_dsi0 off (VP1 freed) + route_lvds off (no
+ * early modeset). Re-add the eDP/DMC cleanups once the LVDS mode-set works.
+ */
+
+/* Panel-power rails (board wiring, per the vendor OS). */
+&vcc3v3_lcd0_n {
+	gpio = <&gpio3 RK_PA3 GPIO_ACTIVE_HIGH>;
+	enable-active-high;
+};
+
+&vcc3v3_lcd1_n {
+	gpio = <&gpio0 RK_PC5 GPIO_ACTIVE_HIGH>;
+	enable-active-high;
+};
+
+/*
+ * vcc3v3_vga (EVB bogus regulator, regulator-always-on, gpio = GPIO0_D5) LEFT
+ * ENABLED on purpose for this baseline: GPIO0_D5 is the LCDBL BL-EN pin, so the
+ * always-on regulator drives BL-EN high => the panel backlight is LIT (a visible
+ * sign of life) even though no image is driven yet. Side effect: pwm-backlight
+ * can't claim GPIO0_D5 (probes -EBUSY) -- harmless here. When we do the real
+ * DSI->LVDS bridge path we'll disable this again and let pwm-backlight own BL-EN.
+ */
+
+/* --- Disable EVB hardware this board does NOT have (errors / boot hang). --- */
+&gt1x        { status = "disabled"; };	/* EVB i2c Goodix touch (ours is USB) */
+&gc8034      { status = "disabled"; };	/* EVB camera */
+&os04a10     { status = "disabled"; };	/* EVB camera */
+&ov5695      { status = "disabled"; };	/* EVB camera */
+&csi2_dphy0  { status = "disabled"; };
+&csi2_dphy_hw { status = "disabled"; };
+&rkisp       { status = "disabled"; };
+&rkisp_mmu   { status = "disabled"; };
+&rkisp_vir0  { status = "disabled"; };
+&rknpu       { status = "disabled"; };
+&rknpu_mmu   { status = "disabled"; };

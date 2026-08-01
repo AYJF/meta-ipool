@@ -1,0 +1,179 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * iPool Pilot SZ3568 (Rockchip RK3568) board device tree.
+ *
+ * Derived from the mainline RK3568 EVB. Serial console on UART3/ttyS8.
+ *
+ * DISPLAY: native RK3568 single-link LVDS -> 7" 1024x600 24-bit panel
+ * (XXR070B4120-L083C). RK3568 LVDS reuses the DSI0 DPHY in LVDS mode, so this
+ * needs the backported rockchip,rk3568-lvds encoder driver (see
+ * rockchip-lvds-rk3568.patch) and dsi0 must stay DISABLED (shared DPHY).
+ * Path: VOP2 VP1 -> lvds (LVDS0) -> panel. i2c2 kept bare (no bridge on board).
+ * HDMI stays on VP0 (EVB default) as a secondary output.
+ */
+
+#include "rk3568-evb1-v10.dts"
+
+/ {
+	model = "iPool SZ3568 (bring-up)";
+
+	chosen {
+		stdout-path = "serial8:115200n8";
+	};
+
+	/*
+	 * Backlight is on the LCDBL connector: 12V (hardware) + BL-EN (GPIO0_D5) +
+	 * BL-ADJ (pwm4/GPIO0_C3). Matches the vendor's known-working wiring:
+	 *   - PWM polarity is INVERTED (1). With normal polarity, "max brightness"
+	 *     drives the duty the wrong way and the backlight stays dark.
+	 *   - The BL-EN circuit is powered from the LCD0 rail (vcc3v3_lcd0_n =
+	 *     GPIO3_A3, see the &vcc3v3_lcd0_n override below), NOT lcd1_n. Without
+	 *     that rail enabled, BL-EN never reaches the connector.
+	 */
+	backlight: backlight {
+		compatible = "pwm-backlight";
+		pwms = <&pwm4 0 25000 1>;	/* 1 = PWM_POLARITY_INVERTED */
+		brightness-levels = <0 32 64 96 128 160 192 224 255>;
+		default-brightness-level = <8>;
+		enable-gpios = <&gpio0 RK_PD5 GPIO_ACTIVE_HIGH>;	/* BL-EN */
+		power-supply = <&vcc3v3_lcd0_n>;
+		post-pwm-on-delay-ms = <100>;
+		pwm-off-delay-ms = <10>;
+	};
+
+	/* 1024x600 24-bit single-link LVDS panel (XXR070B4120-L083C). */
+	panel: panel-lvds {
+		compatible = "panel-lvds";
+		width-mm = <154>;
+		height-mm = <86>;
+		data-mapping = "vesa-24";
+		backlight = <&backlight>;
+		power-supply = <&vcc3v3_lcd1_n>;	/* panel VDD = GPIO0_C5 */
+		prepare-delay-ms = <20>;
+		enable-delay-ms = <20>;
+		unprepare-delay-ms = <20>;
+
+		panel-timing {
+			/*
+			 * 48.0 MHz = 336MHz/7, matching the inno-dsidphy LVDS PLL
+			 * (see rockchip-dsidphy-lvds-pll-rate.patch) and dclk_vp1
+			 * (GPLL 1200MHz / 25, see &vop assigned-clocks below). All three
+			 * must agree or the panel gets an unlockable clock (black).
+			 */
+			clock-frequency = <48000000>;
+			hactive = <1024>;
+			vactive = <600>;
+			hback-porch = <140>;
+			hfront-porch = <160>;
+			hsync-len = <20>;
+			vback-porch = <20>;
+			vfront-porch = <12>;
+			vsync-len = <3>;
+			hsync-active = <0>;
+			vsync-active = <0>;
+			de-active = <0>;
+			pixelclk-active = <0>;
+		};
+
+		port {
+			panel_in_lvds: endpoint {
+				remote-endpoint = <&lvds_out_panel>;
+			};
+		};
+	};
+
+	/* RK3568 LVDS encoder (shares DSI0 DPHY). Not in mainline DT -> defined here. */
+	lvds: lvds {
+		compatible = "rockchip,rk3568-lvds";
+		clocks = <&cru PCLK_DSITX_0>;
+		clock-names = "pclk_lvds";
+		phys = <&dsi_dphy0>;
+		phy-names = "dphy";
+		power-domains = <&power RK3568_PD_VO>;
+		rockchip,grf = <&grf>;
+		rockchip,output = "lvds";
+		status = "okay";
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			lvds_in: port@0 {
+				reg = <0>;
+				lvds_in_vp1: endpoint {
+					remote-endpoint = <&vp1_out_lvds>;
+				};
+			};
+
+			lvds_out: port@1 {
+				reg = <1>;
+				lvds_out_panel: endpoint {
+					remote-endpoint = <&panel_in_lvds>;
+				};
+			};
+		};
+	};
+};
+
+/* Serial console: UART3 header = SoC uart8, mux uart8m1 -> ttyS8. */
+&uart8 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart8m1_xfer>;
+	status = "okay";
+};
+
+&pwm4 {
+	status = "okay";
+};
+
+/*
+ * Backlight (LCDBL) enable rail. The vendor board wires the LCD0 enable to
+ * GPIO3_A3; the EVB base points vcc3v3_lcd0_n at GPIO0_C7 (wrong pin for this
+ * board) with a matching pinctrl. Repoint the GPIO and drop the EVB pinctrl so
+ * we don't mux the unrelated GPIO0_C7. GPIO3_A3 is otherwise unused on the EVB.
+ */
+&vcc3v3_lcd0_n {
+	gpio = <&gpio3 RK_PA3 GPIO_ACTIVE_HIGH>;
+	regulator-boot-on;
+	/delete-property/ pinctrl-names;
+	/delete-property/ pinctrl-0;
+};
+
+/* LVDS reuses the DSI0 DPHY in LVDS mode: enable the phy, keep dsi0 off. */
+&dsi_dphy0 {
+	status = "okay";
+};
+
+&dsi0 {
+	status = "disabled";
+};
+
+/*
+ * VOP2 pixel clock for the LVDS path. By default dclk_vop1's parent VPLL sits
+ * on the 24MHz oscillator, and dclk_vop1 is CLK_SET_RATE_NO_REPARENT with no
+ * parent rate-propagation, so clk_set_rate() can only divide it -> stuck at
+ * 24MHz -> panel never locks (black). VPLL also rounds oddly (asking 720MHz
+ * gave 700 -> dclk 50MHz). Instead parent dclk_vop1 to the always-on GPLL
+ * (1200MHz) and divide by 25 -> exactly 48.0MHz, matching the inno-dsidphy
+ * LVDS PLL (336MHz/7 = 48MHz) and the panel timing. All three agree at 48MHz.
+ */
+&vop {
+	assigned-clocks = <&cru DCLK_VOP1>;
+	assigned-clock-parents = <&cru PLL_GPLL>;
+	assigned-clock-rates = <48000000>;
+};
+
+/* Route VOP2 VP1 -> LVDS0. */
+&vp1 {
+	vp1_out_lvds: endpoint@ROCKCHIP_VOP2_EP_LVDS0 {
+		reg = <ROCKCHIP_VOP2_EP_LVDS0>;
+		remote-endpoint = <&lvds_in_vp1>;
+	};
+};
+
+/* i2c2 left as a bare bus (no DSI-LVDS bridge populated on this board). */
+&i2c2 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c2m1_xfer>;
+};

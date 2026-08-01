@@ -1,0 +1,12 @@
+[Unit]
+Description=iPool WiFi (RTL8723DS) bring-up diagnostic (dumps wlan0 state to serial ttyS8)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/wifi-diag.sh
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

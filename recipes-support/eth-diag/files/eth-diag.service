@@ -1,0 +1,12 @@
+[Unit]
+Description=iPool ethernet bring-up diagnostic (dumps GMAC clocks/state to serial ttyS8)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/eth-diag.sh
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

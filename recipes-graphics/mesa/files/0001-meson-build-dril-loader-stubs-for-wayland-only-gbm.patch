@@ -1,0 +1,42 @@
+From: iPool bring-up <dev@ipool>
+Date: Sun, 27 Jul 2026 00:00:00 +0000
+Subject: [PATCH] meson: build the DRI-loader stubs for wayland-only GBM/EGL
+
+The gallium/targets/dril subdir builds the /usr/lib/dri/<driver>_dri.so
+loader stubs (rockchip_dri.so, panfrost_dri.so, swrast_dri.so, ...) that
+GBM/EGL dlopen at runtime. Upstream only builds it when GLX==dri or an
+X11/XCB platform is enabled:
+
+    if with_gallium and with_gbm
+      if with_glx == 'dri' or with_platform_x11 or with_platform_xcb
+        subdir('gallium/targets/dril')
+
+On a wayland-only image (no x11 platform, glx forced disabled) none of
+those hold, so the target is never built: /usr/lib/dri ends up empty and
+GBM/EGL have no <driver>_dri.so to load, making eglInitialize() fail with
+EGL_NOT_INITIALIZED. The stubs have no X11 dependency (they only link
+libgallium + gbm), so build them for any gallium+gbm configuration.
+
+Downstream (meta-ipool) fix for an RK3568 wayland/Weston boot2qt image.
+
+Upstream-Status: Pending
+---
+ src/meson.build | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -152,9 +152,10 @@
+   subdir('egl')
+ endif
+ if with_gallium and with_gbm
+-  if with_glx == 'dri' or with_platform_x11 or with_platform_xcb
+-    subdir('gallium/targets/dril')
+-  endif
++  # meta-ipool: also build the DRI-loader stubs for wayland-only GBM/EGL.
++  # Upstream gates them behind glx=dri or x11/xcb; without them /usr/lib/dri
++  # is empty and eglInitialize() fails on a wayland-only image.
++  subdir('gallium/targets/dril')
+ endif
+
+ if with_gbm and with_dri2

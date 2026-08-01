@@ -1,0 +1,8 @@
+# editor / OS cruft
+*~
+*.swp
+*.orig
+*.rej
+.DS_Store
+__pycache__/
+*.pyc

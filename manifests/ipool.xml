@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Reference copy of the repo local manifest that pins the iPool additions.
+     On a new machine, place this at .repo/local_manifests/ipool.xml (after
+     `repo init`), replace <YOUR-GH-USER>, then `repo sync`. See ../README.md. -->
+<manifest>
+  <project name="meta-rockchip" remote="yocto"
+           revision="refs/heads/whinlatter" upstream="whinlatter"
+           path="sources/meta-rockchip"/>
+
+  <remote name="rauc-gh" fetch="https://github.com/rauc"/>
+  <project name="meta-rauc" remote="rauc-gh"
+           revision="4bc963abde09904392d3ce7524d430b7e4b808aa"
+           upstream="whinlatter" path="sources/meta-rauc"/>
+
+  <remote name="ipool-gh" fetch="https://github.com/<YOUR-GH-USER>"/>
+  <project name="meta-ipool" remote="ipool-gh"
+           revision="main" path="sources/meta-ipool"/>
+</manifest>

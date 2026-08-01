@@ -1,0 +1,22 @@
+/* sz3568-console: route U-Boot proper console to the board's UART3 header
+ * (SoC uart8, mux uart8m1) at 115200, matching the kernel ttyS8 console so a
+ * single FTDI on UART3 shows U-Boot proper -> kernel. The early DEBUG_UART/SPL
+ * stage stays on uart2 (unchanged) because moving it needs hand-coded iomux.
+ */
+/ {
+	chosen {
+		stdout-path = "serial8:115200n8";
+	};
+};
+
+&uart8 {
+	bootph-all;
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart8m1_xfer>;
+	clock-frequency = <24000000>;
+};
+
+&uart8m1_xfer {
+	bootph-all;
+};

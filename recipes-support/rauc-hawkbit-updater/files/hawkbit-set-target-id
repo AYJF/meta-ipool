@@ -1,0 +1,19 @@
+#!/bin/sh
+# Set rauc-hawkbit-updater's target_name (= hawkBit controller id) to a value
+# unique and stable per board, so each device self-registers under its own name.
+# Preference: SoC serial from the device tree, then machine-id, then boot_id.
+# Runs as ExecStartPre (root) before rauc-hawkbit-updater starts.
+set -eu
+CONF=/etc/rauc-hawkbit-updater/config.conf
+DT=/sys/firmware/devicetree/base/serial-number
+
+ID=""
+[ -r "$DT" ] && ID=$(tr -d '\000' < "$DT" 2>/dev/null || true)
+[ -n "$ID" ] || ID=$(cat /etc/machine-id 2>/dev/null || true)
+[ -n "$ID" ] || ID=$(tr -d '-' < /proc/sys/kernel/random/boot_id 2>/dev/null || true)
+[ -n "$ID" ] || ID="unknown"
+
+TARGET="sz3568-${ID}"
+# Overwrite the target_name line in place (idempotent across reboots).
+sed -i "s/^target_name .*/target_name               = ${TARGET}/" "$CONF"
+echo "hawkbit-set-target-id: controller id = ${TARGET}"

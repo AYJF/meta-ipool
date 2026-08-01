@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=iPool
+Description=iPool boot splash (centered logo on black)
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/ipool
+ScriptFile=/usr/share/plymouth/themes/ipool/ipool.script

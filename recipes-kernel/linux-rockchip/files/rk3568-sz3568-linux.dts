@@ -1,0 +1,582 @@
+#include "rk3568-sz3568-v10.dtsi"
+#include "rk3568-linux.dtsi"
+#include <dt-bindings/display/rockchip_vop.h>
+
+/ {
+        panel {
+                compatible = "simple-panel";
+                backlight = <&backlight>;
+                power-supply = <&vcc3v3_lcd1_n>;
+                enable-delay-ms = <20>;
+                prepare-delay-ms = <20>;
+                unprepare-delay-ms = <20>;
+                disable-delay-ms = <20>;
+                //bus-format = <MEDIA_BUS_FMT_RGB666_1X7X3_SPWG>;
+                width-mm = <217>;
+                height-mm = <136>;
+        	status = "okay";
+
+                disp_timings2: display-timings {
+                        native-mode = <&timing0>;
+
+                        timing0: timing0 {
+                                /* iPool 7" XXR070B4120, 1024x600 single-ch LVDS.
+                                 * Exact values from the vendor's WORKING shipped
+                                 * DTB (sz3568_..._lvds_1024x600 image). */
+                                clock-frequency = <66000000>;
+                                hactive = <1024>;
+                                vactive = <600>;
+                                hback-porch = <200>;
+                                hfront-porch = <110>;
+                                vback-porch = <20>;
+                                vfront-porch = <13>;
+                                hsync-len = <10>;
+                                vsync-len = <2>;
+                                hsync-active = <0>;
+                                vsync-active = <0>;
+                                de-active = <0>;
+                                pixelclk-active = <0>;
+                        };
+                };
+
+                ports {
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+
+			/* Single-channel LVDS: panel <-> &lvds (LVDS0) only.
+			 * (Vendor working 1024x600 build is single-channel; the
+			 * dual-lvds odd/even split was for their 1920x1080 panel.) */
+			port@0 {
+				reg = <0>;
+				panel_in_lvds0: endpoint {
+					remote-endpoint = <&lvds0_out_panel>;
+				};
+			};
+                };
+        };
+        edp-panel {
+                compatible = "simple-panel";
+                backlight = <&backlight>;
+                power-supply = <&vcc3v3_lcd0_n>;
+                prepare-delay-ms = <120>;
+                enable-delay-ms = <120>;
+                unprepare-delay-ms = <120>;
+                disable-delay-ms = <120>;
+        	status = "disabled";
+
+                display-timings {
+                        native-mode = <&edp_timing>;
+
+                        edp_timing: timing0 {
+                                clock-frequency = <120000000>;
+                                hactive = <1920>;
+                                vactive = <1080>;
+                                hfront-porch = <12>;
+                                hsync-len = <16>;
+                                hback-porch = <48>;
+                                vfront-porch = <8>;
+                                vsync-len = <4>;
+                                vback-porch = <8>;
+                                hsync-active = <0>;
+                                vsync-active = <0>;
+                                de-active = <0>;
+                                pixelclk-active = <0>;
+                        };
+                };
+
+                port {
+                        panel_in_edp: endpoint {
+                                remote-endpoint = <&edp_out_panel>;
+                        };
+                };
+        };
+};
+
+&rng {
+        status = "okay";
+};
+
+&rockchip_suspend {
+        status = "disabled";
+};
+
+&vop {
+        support-multi-area;
+};
+
+&uart0 {
+        status = "okay";
+};
+/*
+&uart1 {
+        pinctrl-names = "default";
+        pinctrl-0 = <&uart1m1_xfer>;
+        status = "okay";
+};*/
+
+&uart5 {
+        pinctrl-names = "default";
+        pinctrl-0 = <&uart5m1_xfer>;
+        status = "okay";
+};
+
+&uart7 {
+        pinctrl-names = "default";
+        pinctrl-0 = <&uart7m2_xfer>;
+        status = "okay";
+};
+
+&uart8 {
+        pinctrl-names = "default";
+        /* iPool bench: the UART3/ttyS8 header on this board is wired to the uart8
+         * M0 pin group (that is where serial output actually appears). The vendor
+         * DTS used uart8m1_xfer which routes ttyS8 to the M1 pins -> no output on
+         * our header. Use m0 to match the physical console connection. */
+        pinctrl-0 = <&uart8m0_xfer>;
+        status = "okay";
+};
+
+&uart9 {
+        pinctrl-names = "default";
+        pinctrl-0 = <&uart9m2_xfer>;
+        status = "okay";
+};
+
+
+&i2c0 {
+        status = "okay";
+         rtc@51 {
+                compatible = "rtc,hym8563";
+                reg = <0x51>;
+                //irq_gpio = <&gpio4 25 IRQ_TYPE_EDGE_FALLING>;
+        };
+
+};
+
+&i2c1 {
+        status = "okay";
+
+        gt9xxx: gt9xx@14 {
+                compatible = "goodix,gt9xx";
+                reg = <0x14>;
+                //touch-gpio = <&gpio1 9 IRQ_TYPE_LEVEL_LOW>;
+                //reset-gpio = <&gpio1 10 GPIO_ACTIVE_HIGH>;
+                touch-gpio = <&gpio0 13 IRQ_TYPE_LEVEL_LOW>;
+                reset-gpio = <&gpio0 14 GPIO_ACTIVE_HIGH>;
+                max-x = <1536>;
+                max-y = <2048>;
+                tp-size = <970>;
+                status = "okay";
+
+        };
+
+    gt911: gt911@14 {
+                compatible = "goodix,gt9xx";
+                reg = <0x14>;
+                touch-gpio = <&gpio0 5 IRQ_TYPE_LEVEL_LOW>;
+                reset-gpio = <&gpio0 12 GPIO_ACTIVE_HIGH>;
+                max-x = <1280>;
+                max-y = <800>;
+                tp-size = <911>;
+                status = "disabled";
+        };
+};
+
+&i2c2 {
+    status = "okay";
+    /* i2c mux investigation CLOSED: m1 (GPIO4_B5/B4) = clean bus, 0 devices;
+     * m0 (GPIO0_B5/B6) = continuous "rk3x-i2c fe5b0000.i2c: timeout state 2"
+     * (bus stuck, floods log, delays boot to 40s). The GM8775C is on NEITHER --
+     * it is not an i2c slave on this board (strap-configured). Keep m1 (clean). */
+    pinctrl-0 = <&i2c2m1_xfer>;
+        // tc_bridge: bridge@0f {
+
+        //      compatible = "toshiba,tc358775";
+        //      reg = <0x0f>;
+        //      vdd-supply = <&vcc1v2_tc358775>;
+        //      // vddio-supply = <&vcc1v2_tc358775>;
+        //      // stby-gpios = <&gpio3 RK_PD5 GPIO_ACTIVE_LOW>;
+        //      reset-gpios = <&gpio3 RK_PD5 GPIO_ACTIVE_LOW>;
+        //      ports {
+        //              #address-cells = <1>;
+        //              #size-cells = <0>;
+        //              port@0 {
+        //                      reg = <0>;
+        //                      d2l_in_test: endpoint {
+        //                              remote-endpoint = <&dsi0_out>;
+        //                      };
+        //              };
+        //              port@1 {
+        //                      reg = <1>;
+        //                      lvds_out: endpoint {
+        //                              remote-endpoint = <&panel_in>;
+        //                      };
+        //              };
+        //      };
+        // };
+
+        /* Bridge chips DISABLED: this board drives the panel via the SoC's
+         * native LVDS (see DISPLAY block below), so neither the TC358775 nor
+         * the GM8775C is in the display path. Left here (disabled) only to
+         * document the vendor's populated-but-unused footprints; keeping them
+         * "okay" just made the tc358775 driver probe a non-responding i2c slave. */
+        tc8775: tc8775@0f {
+        compatible ="toshiba,tc358775";
+        reg=<0x0f>;
+        status="disabled";
+    };
+        gm8775c@2c {
+                               compatible = "gm8775c,mipi_to_lvds";
+                               reg = <0x2c>;
+                               status = "disabled";
+               };
+
+};
+
+&i2c3 {
+        status = "okay";
+
+     /*  gt9xxx: gt9xx@14 {
+                compatible = "goodix,gt9xx";
+                reg = <0x14>;
+               // touch-gpio = <&gpio1 9 IRQ_TYPE_LEVEL_LOW>;
+               // reset-gpio = <&gpio1 10 GPIO_ACTIVE_HIGH>;
+                touch-gpio = <&gpio0 13 IRQ_TYPE_LEVEL_LOW>;
+                reset-gpio = <&gpio0 14 GPIO_ACTIVE_HIGH>;
+                max-x = <1536>;
+                max-y = <2048>;
+                tp-size = <970>;
+                status = "okay";
+
+        };*/
+};
+
+
+&backlight {
+        status = "okay";
+        enable-gpios = <&gpio0 29 0>;
+        power-supply = <&vcc3v3_lcd0_n>;
+        post-pwm-on-delay-ms = <100>;
+        pwm-off-delay-ms = <10>;
+
+};
+
+&backlight1 {
+        enable-gpios = <&gpio0 28 0>;
+        power-supply = <&vcc3v3_lcd1_n>;
+        post-pwm-on-delay-ms = <100>;
+        pwm-off-delay-ms = <10>;
+        status = "okay";
+};
+
+
+&dsi0 {
+        status = "disabled";
+};
+
+&dsi0_in_vp0 {
+        status = "disabled";
+};
+
+&dsi0_in_vp1 {
+        status = "disabled";
+};
+
+&video_phy0 {
+        status = "okay";
+};
+
+&dsi1 {
+        enable-gpios = <&gpio0 RK_PB0 GPIO_ACTIVE_HIGH>;
+        tc3587_res-gpios = <&gpio3 RK_PD5 GPIO_ACTIVE_HIGH>;
+        tc3587-res-gpios-sw = "on";
+        power-supply = <&vcc1v2_tc358775>;
+        rockchip,lane-rate = <900>;
+        status = "disabled";
+};
+
+&dsi1_in_vp0 {
+        status = "disabled";
+};
+
+&dsi1_in_vp1 {
+        status = "okay";
+};
+
+&video_phy1 {
+        status = "okay";
+};
+
+&edp {
+        force-hpd;
+        status = "disabled";
+
+        ports {
+                port@1 {
+                        reg = <1>;
+
+                        edp_out_panel: endpoint {
+                                remote-endpoint = <&panel_in_edp>;
+                        };
+                };
+        };
+};
+
+&edp_phy {
+        status = "okay";
+};
+
+&edp_in_vp0 {
+        status = "disabled";
+};
+
+&edp_in_vp1 {
+        status = "okay";
+};
+&route_edp {
+        connect = <&vp1_out_edp>;
+        status = "okay";
+};
+
+&lvds {
+        status = "disabled";
+	dual-channel;
+
+        ports {
+                port@1 {
+                        reg = <1>;
+
+                        lvds0_out_panel: endpoint {
+                                remote-endpoint = <&panel_in_lvds0>;
+                        };
+                };
+        };
+
+};
+
+&lvds1 {
+	status = "disabled";
+
+	ports {
+		port@1 {
+			reg = <1>;
+			lvds1_out_panel: endpoint {
+				remote-endpoint = <&panel_in_lvds1>;
+			};
+		};
+	};
+};
+
+&lvds_in_vp1 {
+        status = "okay";
+};
+
+&lvds_in_vp2 {
+        status = "disabled";
+};
+&route_lvds {
+        status = "okay";
+        connect = <&vp1_out_lvds>;
+};
+
+&dmc {
+        status = "disabled";
+        auto-freq-en = <0>;
+};
+
+&hdmi {
+        status = "okay";
+};
+
+&route_hdmi{
+        status = "okay";
+};
+
+&hdmi_sound {
+        status = "okay";
+};
+
+&vp1{
+        rockchip,plane-mask = <(1<< ROCKCHIP_VOP2_CLUSTER0 | 1 << ROCKCHIP_VOP2_ESMART0 | 1 << ROCKCHIP_VOP2_SMART0)>;
+        rockchip,primary-plane = <ROCKCHIP_VOP2_SMART0>;
+};
+
+&vp0{
+        rockchip,plane-mask = <(1<< ROCKCHIP_VOP2_CLUSTER1 | 1 << ROCKCHIP_VOP2_ESMART1 | 1 << ROCKCHIP_VOP2_SMART1)>;
+        rockchip,primary-plane = <ROCKCHIP_VOP2_SMART1>;
+};
+/*
+&vp0 {
+        cursor-win-id = <ROCKCHIP_VOP2_CLUSTER0>;
+};
+
+&vp1 {
+        cursor-win-id = <ROCKCHIP_VOP2_CLUSTER1>;
+};*/
+
+/*
+ * iPool: disable USB2 host1 (EHCI fd880000 + OHCI fd8c0000). Its downstream
+ * port is unpopulated (the board's 4G/USB slot) and floats, so the hub driver
+ * spins in a tight retry loop spamming "usb5-port1: config error / Cannot
+ * enable. Maybe the USB cable is bad?" -- this floods the synchronous ttyS8
+ * console and starves the boot before userspace/Boot2Qt. Nothing we need is on
+ * host1 (touchscreen is on host0 fd800000; WiFi AIC8800 is on SDIO sdmmc1), so
+ * turn it off. Re-enable if the 4G/USB port is ever populated.
+ */
+&usb_host1_ehci {
+	status = "disabled";
+};
+
+&usb_host1_ohci {
+	status = "disabled";
+};
+
+/* ==========================================================================
+ * WiFi (SDIO / sdmmc1): ENABLED -- RTL8723DS.
+ *
+ * The board's WiFi is RTL8723DS (confirmed: the vendor's own working sz3568
+ * image DTB declares wifi_chip_type="rtl8723ds" and ships 8723ds.ko; the
+ * "aic8800" string in rk3568-sz3568.dtsi is a variant/template leftover).
+ * We override it to rtl8723ds below and install the matching driver.
+ *
+ * No pin conflict with our uart8m0 serial console: sdmmc1 uses GPIO2_A3..B0,
+ * uart8m0 uses GPIO2_C5/C6, and sdio_pwrseq takes its 32 kHz from the rk809
+ * PMIC (not a wifi_32k GPIO). Bluetooth stays DISABLED -- BT is on uart8,
+ * which we use for the console; WiFi is on SDIO and doesn't touch uart8. Turn
+ * BT on later only if the console is moved off uart8.
+ * ========================================================================== */
+&sdio_pwrseq  {
+	status = "okay";
+	/* Drop wifi_32k from the pinmux: v10.dtsi muxes it to GPIO2_C6, which is
+	 * our uart8m0 serial-console pin, so the pwrseq fails to claim it
+	 * ("pin gpio2-22 already requested by fe6c0000.serial ... Error applying
+	 * setting"), which then aborts the WiFi power-on and no SDIO card / wlan0
+	 * appears. wifi_32k is only the 32.768kHz WiFi sleep clock; RTL8723DS
+	 * associates fine without it (loses only deep-sleep power saving). Keep
+	 * just wifi_enable_h so the chip still gets powered/reset. */
+	pinctrl-0 = <&wifi_enable_h>;
+};
+&sdmmc1       { status = "okay"; };
+&wireless_wlan {
+	status = "okay";
+	wifi_chip_type = "rtl8723ds";
+};
+&wireless_bluetooth { status = "disabled"; };
+
+/* ==========================================================================
+ * MINIMAL BRING-UP: disable all heavy/optional (power-domain-backed) blocks so
+ * the board boots clean to a serial login. Re-enable groups one at a time to
+ * bring hardware back (display + DSI->LVDS bridge last). WiFi/BT + sdio_pwrseq
+ * are disabled above (they also free uart8 RX). eMMC/PMIC/uart8/i2c/gmac kept.
+ * ========================================================================== */
+
+/* GPU: ENABLED for the PROPRIETARY Mali Bifrost driver (built into the kernel)
+ * + libmali userspace -- the vendor's proven stack (their shipped image runs
+ * exactly this). Unlike panfrost (which hard-hangs on GPU power-on here), the
+ * proprietary driver brings the GPU power domain up correctly, so we KEEP the
+ * vendor OPP table (the proprietary driver's DVFS parses it fine -- it was only
+ * panfrost's generic OPP parser that choked on it). DDR freq scaling stays off. */
+&gpu { status = "okay"; };
+&dmc { status = "disabled"; };
+
+/* Media Process Platform (video codecs) */
+&rkvdec { status = "disabled"; };
+&rkvenc { status = "disabled"; };
+&vdpu   { status = "disabled"; };
+&vepu   { status = "disabled"; };
+&iep    { status = "disabled"; };
+&jpegd  { status = "disabled"; };
+&rknpu  { status = "disabled"; };
+
+/* Display pipeline (headless bring-up; re-added with the panel later) */
+/* HDMI RE-ENABLED: VOP2 + HDMI on VP0 give a display + a console on the HDMI
+ * screen (fbcon on tty1). With a USB keyboard this is a local shell that
+ * bypasses the broken serial RX. Bridge-independent; GPU stays off (fbcon needs
+ * only VOP2, not Mali). */
+&vop        { status = "disabled"; };
+&hdmi       { status = "disabled"; };
+&hdmi_sound { status = "disabled"; };
+&dsi0       { status = "disabled"; };
+&dsi1       { status = "disabled"; };
+&edp        { status = "disabled"; };
+&lvds       { status = "disabled"; };
+&lvds1      { status = "disabled"; };
+&video_phy0 { status = "disabled"; };
+&video_phy1 { status = "disabled"; };
+
+/* Cameras / ISP */
+&csi2_dphy0   { status = "disabled"; };
+&csi2_dphy_hw { status = "disabled"; };
+&mipi_csi2    { status = "disabled"; };
+&rkcif        { status = "disabled"; };
+&rkcif_mmu    { status = "disabled"; };
+&rkisp        { status = "disabled"; };
+&rkisp_mmu    { status = "disabled"; };
+
+/* Audio */
+&rk809_sound { status = "disabled"; };
+&i2s0_8ch    { status = "disabled"; };
+&i2s1_8ch    { status = "disabled"; };
+
+/* PCIe */
+&pcie2x1   { status = "disabled"; };
+&pcie3x2   { status = "disabled"; };
+&pcie30phy { status = "disabled"; };
+
+/* ==========================================================================
+ * DISPLAY: VOP2 (VP1) -> NATIVE RK3568 LVDS (&lvds) -> simple-panel (1024x600).
+ *
+ * THE VENDOR'S ACTUAL WORKING PATH, confirmed by decompiling the DTB out of
+ * their shipped sz3568_Ubuntu1804_..._lvds_1024x600 firmware image: the panel is
+ * a plain root-level "simple-panel" driven by the SoC's built-in LVDS TX -- NOT
+ * DSI and NOT the GM8775C bridge. In the working DTB dsi@fe060000 and
+ * dsi@fe070000 are BOTH disabled, and gm8775c@2c / tc8775@0f merely probe on i2c2
+ * (vestigial -- they drive nothing). Hence the entire i2c / DSI-command-mode
+ * bridge-config effort was chasing a pipeline this board doesn't use.
+ *
+ * Single-channel, 24-bit; LVDS output format = rk3568-lvds driver default (the
+ * vendor DTB sets no bus-format/data-mapping). The vendor body above already has
+ * &lvds_in_vp1 = okay and &route_lvds = okay (connect <&vp1_out_lvds>), and
+ * &lvds port@1 (lvds0_out_panel) -> panel port@0 (panel_in_lvds0). Here we just
+ * enable &vop + &lvds (single channel) and keep the DSI/bridge path OFF so it
+ * cannot steal VP1.
+ * ========================================================================== */
+&vop         { status = "okay"; };
+&video_phy0  { status = "okay"; };
+
+&lvds {
+	status = "okay";
+	/delete-property/ dual-channel;   /* single-channel for the 1024x600 panel */
+};
+
+/* DSI/bridge path stays OFF (dsi0 on VP1 would collide with LVDS on VP1). */
+&dsi0 { status = "disabled"; };
+&dsi1 { status = "disabled"; };
+
+/* We converted the panel to a single LVDS port (dropped port@1/panel_in_lvds1),
+ * so the &lvds1 output endpoint's remote-endpoint now dangles. Drop it (lvds1
+ * stays disabled) to keep the phandle graph valid. */
+&lvds1_out_panel {
+	/delete-property/ remote-endpoint;
+};
+
+/* Ethernet: this board's GbE PHY has no crystal - the SoC must DRIVE the
+ * 125 MHz RGMII clock out to it on the gmac1 clkinout pin. That means gmac1
+ * must run in clock_in_out="output" mode (like the Rockchip vendor U-Boot):
+ *   - SCLK_GMAC1 is sourced from the INTERNAL clk_mac1_2top (not gmac1_clkin),
+ *     which frees the clkinout pin from being an input, and
+ *   - clk_mac1_out (added to the clocks list below) is enabled by the patched
+ *     dwmac-rk driver (recipe patch 0005) and drives the pin out to the PHY.
+ * The stock DT used "input" mode (SCLK_GMAC1 <- gmac1_clkin), which held the
+ * pin as an input so the crystal-less PHY got no clock: MDIO read 0xffff and
+ * the GMAC DMA reset hung. mainline U-Boot never sets this up; the vendor
+ * Rockchip loader does, which is why the vendor image works. */
+&gmac1 {
+	/* Wired ethernet abandoned: the crystal-less GbE PHY needs the Rockchip
+	 * loader's gmac output-mode pin setup, which mainline U-Boot + this kernel
+	 * driver cannot reproduce. Disable gmac1 so it stops spamming "Failed to
+	 * reset the dma" on the console every retry. Connectivity is via RTL8723DS
+	 * WiFi instead. (The clk_mac1_out output-mode experiment -- kernel patch
+	 * 0005 + a clocks override here -- is removed; it never woke the PHY.) */
+	status = "disabled";
+};

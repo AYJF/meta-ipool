@@ -1,0 +1,46 @@
+From: iPool bring-up <dev@ipool>
+Date: Mon, 28 Jul 2026 00:00:00 +0000
+Subject: [PATCH] phy: rockchip-inno-dsidphy: retarget LVDS PLL for the SZ3568 panel
+
+The inno-dsidphy LVDS mode hardcodes the PLL divider as prediv=2,
+fbdiv=28. With the driver's PLL formula fout = fbdiv * (ref/2) / prediv
+and ref = 24 MHz, that is 28 * 12MHz / 2 = 168 MHz bit clock, i.e. a
+168/7 = 24 MHz pixel clock (7:1 LVDS serialization).
+
+24 MHz is below the minimum pixel clock of the iPool SZ3568's 7"
+1024x600 LVDS panel (XXR070B4120), so the panel never locks: the
+backlight is on but the image is black.
+
+Use prediv=1 (keeping fbdiv=28): 28 * 12MHz / 1 = 336 MHz bit clock ->
+336/7 = 48.0 MHz pixel. That exact rate is matched by the VOP2 pixel
+clock (dclk_vp1 = GPLL 1200/25 = 48 MHz, set via the board DT) and the
+panel timing, so the LVDS link locks.
+
+This is a board-specific downstream hack for a single fixed panel; the
+proper upstream fix would compute the PLL from the requested mode clock.
+
+Downstream (meta-ipool) fix for the RK3568 SZ3568 board.
+
+Upstream-Status: Inappropriate [board-specific hardcode; upstream needs mode-derived PLL]
+---
+ drivers/phy/rockchip/phy-rockchip-inno-dsidphy.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+--- a/drivers/phy/rockchip/phy-rockchip-inno-dsidphy.c
++++ b/drivers/phy/rockchip/phy-rockchip-inno-dsidphy.c
+@@ -526,7 +526,14 @@
+
+ static void inno_dsidphy_lvds_mode_enable(struct inno_dsidphy *inno)
+ {
+-	u8 prediv = 2;
++	/*
++	 * meta-ipool: upstream default prediv=2,fbdiv=28 gives
++	 * 28*12MHz/2 = 168MHz bit clock = 168/7 = 24MHz pixel, below our
++	 * 1024x600 panel's min -> never locks (black). Use prediv=1 ->
++	 * 28*12/1 = 336MHz -> 336/7 = 48.0MHz pixel, matched exactly by
++	 * dclk_vp1 (GPLL 1200/25 = 48MHz, see &vop) and the panel timing.
++	 */
++	u8 prediv = 1;
+ 	u16 fbdiv = 28;
+
+ 	/* Sample clock reverse direction */

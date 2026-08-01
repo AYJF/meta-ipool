@@ -1,0 +1,28 @@
+// iPool boot splash: logo centered on a black background, with a subtle
+// pulsing opacity so it reads as "booting" rather than a frozen frame.
+
+// solid black background
+Window.SetBackgroundTopColor(0.0, 0.0, 0.0);
+Window.SetBackgroundBottomColor(0.0, 0.0, 0.0);
+
+logo.image = Image("logo.png");
+logo.sprite = Sprite(logo.image);
+logo.w = logo.image.GetWidth();
+logo.h = logo.image.GetHeight();
+logo.sprite.SetX(Window.GetWidth() / 2 - logo.w / 2);
+logo.sprite.SetY(Window.GetHeight() / 2 - logo.h / 2);
+
+// gentle pulse
+progress = 0;
+fun refresh_cb() {
+    progress++;
+    opacity = 0.6 + 0.4 * (Math.Sin(progress / 20) + 1) / 2;
+    logo.sprite.SetOpacity(opacity);
+}
+Plymouth.SetRefreshFunction(refresh_cb);
+
+// keep the logo up through the boot->app handoff (retain-splash on quit)
+fun quit_cb() {
+    logo.sprite.SetOpacity(1);
+}
+Plymouth.SetQuitFunction(quit_cb);
