@@ -31,31 +31,18 @@ and the standard Yocto build dependencies.
 mkdir -p ~/rockchip && cd ~/rockchip
 repo init -u https://code.qt.io/yocto/boot2qt-manifest -b default -m v6.11.1.xml
 
-# 2) Pin the iPool additions (meta-rockchip + meta-rauc + meta-ipool).
+# 2) Pin the iPool additions (meta-rockchip + meta-rauc + meta-ipool) by
+#    pulling this repo's tracked local manifest straight from GitHub (public):
 mkdir -p .repo/local_manifests
-cat > .repo/local_manifests/ipool.xml <<'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<manifest>
-  <!-- Community OE Rockchip BSP (whinlatter) -->
-  <project name="meta-rockchip" remote="yocto"
-           revision="refs/heads/whinlatter" upstream="whinlatter"
-           path="sources/meta-rockchip"/>
-
-  <!-- RAUC layer, pinned to the exact commit this project was built with -->
-  <remote name="rauc-gh" fetch="https://github.com/rauc"/>
-  <project name="meta-rauc" remote="rauc-gh"
-           revision="4bc963abde09904392d3ce7524d430b7e4b808aa"
-           upstream="whinlatter" path="sources/meta-rauc"/>
-
-  <!-- This layer -->
-  <remote name="ipool-gh" fetch="https://github.com/AYJF"/>
-  <project name="meta-ipool" remote="ipool-gh"
-           revision="main" path="sources/meta-ipool"/>
-</manifest>
-EOF
+curl -fsSL https://raw.githubusercontent.com/AYJF/meta-ipool/main/manifests/ipool.xml \
+     -o .repo/local_manifests/ipool.xml
 
 # 3) Fetch all layers at their pinned revisions
 repo sync -j8
+
+# 3b) (optional) keep the manifest tracked: after the sync has cloned meta-ipool,
+#     symlink it so future edits to manifests/ipool.xml take effect on re-sync.
+ln -sf ../../sources/meta-ipool/manifests/ipool.xml .repo/local_manifests/ipool.xml
 
 # 4) Configure the build (Boot2Qt setup script generates build-sz3568/conf/)
 export MACHINE=sz3568

@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Reference copy of the repo local manifest that pins the iPool additions.
-     On a new machine, place this at .repo/local_manifests/ipool.xml (after
-     `repo init`), then `repo sync`. See ../README.md.
-     For a PRIVATE repo over SSH, change the ipool-gh remote fetch to
-     "ssh://git@github.com/AYJF". -->
+<!-- Local manifest that pins the iPool additions (meta-rockchip + meta-rauc +
+     meta-ipool) on top of the Boot2Qt base manifest. On a new machine, after
+     `repo init`, drop this into .repo/local_manifests/ipool.xml then `repo sync`:
+
+       curl -fsSL https://raw.githubusercontent.com/AYJF/meta-ipool/main/manifests/ipool.xml \
+            -o .repo/local_manifests/ipool.xml
+
+     See ../README.md for the full recreate-from-scratch steps. -->
 <manifest>
   <project name="meta-rockchip" remote="yocto"
            revision="refs/heads/whinlatter" upstream="whinlatter"
