@@ -32,7 +32,6 @@ mkdir -p ~/rockchip && cd ~/rockchip
 repo init -u https://code.qt.io/yocto/boot2qt-manifest -b default -m v6.11.1.xml
 
 # 2) Pin the iPool additions (meta-rockchip + meta-rauc + meta-ipool).
-#    Replace <YOUR-GH-USER> with the GitHub account you push meta-ipool to.
 mkdir -p .repo/local_manifests
 cat > .repo/local_manifests/ipool.xml <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -49,7 +48,7 @@ cat > .repo/local_manifests/ipool.xml <<'EOF'
            upstream="whinlatter" path="sources/meta-rauc"/>
 
   <!-- This layer -->
-  <remote name="ipool-gh" fetch="https://github.com/<YOUR-GH-USER>"/>
+  <remote name="ipool-gh" fetch="https://github.com/AYJF"/>
   <project name="meta-ipool" remote="ipool-gh"
            revision="main" path="sources/meta-ipool"/>
 </manifest>
