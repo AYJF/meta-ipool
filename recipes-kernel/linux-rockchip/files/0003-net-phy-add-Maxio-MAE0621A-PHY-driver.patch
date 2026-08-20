@@ -1,0 +1,45 @@
+From: iPool <ajimenez@qeiinc.com>
+Subject: [PATCH] net: phy: add Maxio MAE0621A/B PHY driver
+
+The iPool SZ3568 (Guangdong Hpraise) fits a Maxio MAE0621A Gigabit PHY on
+gmac1. The Rockchip 6.1 BSP has no driver for it, so the PHY fell back to
+genphy, which never runs the MAE0621A clock-mode init -- MDIO returned
+0xffff and the GMAC DMA reset hung. maxio.c (supplied by the board vendor,
+v1.8.1.4) does that init, so wire it into the build.
+
+Only Kconfig/Makefile are patched here; drivers/net/phy/maxio.c is
+installed by the recipe do_configure:prepend.
+
+Upstream-Status: Inappropriate [vendor driver, board-specific]
+---
+ drivers/net/phy/Kconfig  | 7 +++++++
+ drivers/net/phy/Makefile | 1 +
+ 2 files changed, 8 insertions(+)
+
+diff --git a/drivers/net/phy/Kconfig b/drivers/net/phy/Kconfig
+--- a/drivers/net/phy/Kconfig
++++ b/drivers/net/phy/Kconfig
+@@ -232,6 +232,12 @@ config MEDIATEK_GE_PHY
+ 	help
+ 	  Supports the MediaTek Gigabit Ethernet PHYs.
+ 
++config MAXIO_PHY
++	tristate "Maxio PHYs"
++	help
++	  Supports the Maxio MAE0621A-Q2C and MAE0621A/B-Q3C(I) Gigabit
++	  Ethernet PHYs, as fitted to the iPool SZ3568 board on gmac1.
++
+ config MICREL_PHY
+ 	tristate "Micrel PHYs"
+ 	depends on PTP_1588_CLOCK_OPTIONAL
+diff --git a/drivers/net/phy/Makefile b/drivers/net/phy/Makefile
+--- a/drivers/net/phy/Makefile
++++ b/drivers/net/phy/Makefile
+@@ -67,6 +67,7 @@ obj-$(CONFIG_MARVELL_10G_PHY)	+= marvell10g.o
+ obj-$(CONFIG_MARVELL_10G_PHY)	+= marvell10g.o
+ obj-$(CONFIG_MARVELL_PHY)	+= marvell.o
+ obj-$(CONFIG_MARVELL_88X2222_PHY)	+= marvell-88x2222.o
++obj-$(CONFIG_MAXIO_PHY)		+= maxio.o
+ obj-$(CONFIG_MAXLINEAR_GPHY)	+= mxl-gpy.o
+ obj-$(CONFIG_MEDIATEK_GE_PHY)	+= mediatek-ge.o
+ obj-$(CONFIG_MESON_GXL_PHY)	+= meson-gxl.o

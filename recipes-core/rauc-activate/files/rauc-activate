@@ -1,0 +1,42 @@
+#!/bin/sh
+# Activate a STAGED RAUC update by rebooting, but only at a quiet hour.
+#
+# rauc-hawkbit-updater runs with post_update_reboot = false, so an OTA writes the
+# inactive slot and marks it primary in the U-Boot environment WITHOUT rebooting.
+# The board therefore keeps running the old rootfs, with equipment supervision
+# uninterrupted, until this script decides it is a good moment.
+#
+# Detection: U-Boot's BOOT_ORDER lists the primary slot first (boot.scr from
+# meta-rockchip's rk-rauc-demo). If that does not match the slot we actually
+# booted, an update is staged.
+#   BOOT_ORDER=B A  +  booted A  ->  staged, reboot
+#   BOOT_ORDER=B A  +  booted B  ->  in sync, nothing to do
+# This reads the real bootloader state rather than scraping `rauc status` text.
+set -eu
+
+log() { echo "rauc-activate: $*"; }
+
+PRIMARY=$(fw_printenv -n BOOT_ORDER 2>/dev/null | awk '{print $1}' || true)
+BOOTED=$(rauc status --output-format=shell 2>/dev/null \
+         | sed -n "s/^RAUC_SYSTEM_BOOTED_BOOTNAME='\(.*\)'$/\1/p" || true)
+
+if [ -z "$PRIMARY" ] || [ -z "$BOOTED" ]; then
+    log "could not determine slot state (primary='$PRIMARY' booted='$BOOTED'); doing nothing"
+    exit 0
+fi
+
+if [ "$PRIMARY" = "$BOOTED" ]; then
+    log "in sync (booted $BOOTED, primary $PRIMARY); no reboot needed"
+    exit 0
+fi
+
+# Refuse to reboot into a slot the bootloader has already given up on -- that
+# would just burn a boot attempt and trigger a rollback.
+if ! rauc status 2>/dev/null | grep -q "boot status.*good"; then
+    log "primary slot $PRIMARY is not marked good; refusing to reboot"
+    exit 0
+fi
+
+log "update staged (booted $BOOTED, primary $PRIMARY) -- rebooting to activate"
+# --no-wall keeps the serial console clean; systemd still logs the transition.
+exec systemctl reboot --no-wall

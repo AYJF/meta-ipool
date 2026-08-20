@@ -560,23 +560,96 @@
 	/delete-property/ remote-endpoint;
 };
 
-/* Ethernet: this board's GbE PHY has no crystal - the SoC must DRIVE the
- * 125 MHz RGMII clock out to it on the gmac1 clkinout pin. That means gmac1
- * must run in clock_in_out="output" mode (like the Rockchip vendor U-Boot):
- *   - SCLK_GMAC1 is sourced from the INTERNAL clk_mac1_2top (not gmac1_clkin),
- *     which frees the clkinout pin from being an input, and
- *   - clk_mac1_out (added to the clocks list below) is enabled by the patched
- *     dwmac-rk driver (recipe patch 0005) and drives the pin out to the PHY.
- * The stock DT used "input" mode (SCLK_GMAC1 <- gmac1_clkin), which held the
- * pin as an input so the crystal-less PHY got no clock: MDIO read 0xffff and
- * the GMAC DMA reset hung. mainline U-Boot never sets this up; the vendor
- * Rockchip loader does, which is why the vendor image works. */
+
+/* ==========================================================================
+ * Ethernet (gmac1) -- WORKING. Was "abandoned"; the real cause was a missing
+ * PHY driver, not the SoC clock tree.
+ *
+ * The PHY is a Maxio MAE0621A. This BSP ships no driver for it, so phylib bound
+ * genphy, which never runs maxio_mae0621a_clk_init() -- the routine that flips
+ * BIT(8) of page 0xd92 reg 0x02 and makes the MAE0621A source the 125 MHz RGMII
+ * clock. The PHY therefore never started: MDIO read 0xffff and the GMAC DMA reset
+ * hung. Guangdong Hpraise supplied drivers/net/phy/maxio.c (v1.8.1.4); the recipe
+ * installs it and builds it in via CONFIG_MAXIO_PHY=y (ethernet-maxio.cfg).
+ *
+ * The earlier clock_in_out="output" / clk_mac1_out experiment was chasing this
+ * from the wrong end. Schematic SZ3568-V12-162 sheet 23 settles it: Y4 is a
+ * 25 MHz SMD3225 crystal on PHY0_XTALIN/XTALOUT, and R168 22R carries
+ * PHY0_CLKOUT125 -> GMAC1_MCLKINOUT marked "MAC <- PHY". The PHY is the clock
+ * SOURCE, so clock_in_out = "input" in rk3568-sz3568-v10.dtsi is correct.
+ *
+ * PHY ADDRESS = 0. Verified on the target with `mdio stmmac-1`, which walks the
+ * bus over netlink and so bypasses phylib:
+ *
+ *     DEV      PHY-ID  LINK
+ *     0x00  0x7b744411  up
+ *
+ * 0x7b744411 is exactly the MAE0621A-Q2C id in maxio.c. Sheet 23's "PHY Address
+ * 1 (default)" table lists the strap OPTIONS; this build omits the R182 pull-up
+ * on PHYAD0, so it straps to 0 and the vendor's original reg = <0x0> was right.
+ *
+ * Two traps worth recording:
+ *   - The vendor dtsi declares FOUR nodes all named "phy@0" under &mdio1
+ *     (qsgmii_phy0, rmii_phy1, rgmii_phy1 + phy@0). dtc silently MERGES
+ *     same-named nodes, so all three labels resolve to one node. Replaced here
+ *     with a single explicit node.
+ *   - Leaving &mdio1 childless does NOT enable bus scanning:
+ *     of_mdiobus_register() sets mdio->phy_mask = ~0 to suppress auto-probing and
+ *     registers only DT children, so no children means no PHY at all. An explicit
+ *     node is mandatory.
+ *
+ * Other schematic checks that came back clean: GMAC1_RSTN_L is GPIO3_A1 ball AB8
+ * (matches snps,reset-gpio in the dtsi), every GMAC1 signal is an _M0 function
+ * (matches the gmac1m0_* pinctrl), and VCC3V3_PHY0 is SYS+3V3 through 0R R193 so
+ * the rail is unconditionally on.
+ *
+ * gmac0's phy-handle is deleted only so phy@0 can be removed without dangling
+ * that phandle; gmac0 is status = "disabled" (QSGMII, not fitted on this board).
+ * With gmac0 off, gmac1 enumerates as eth0 -- not eth1.
+ * ========================================================================== */
+&gmac0 {
+	/delete-property/ phy-handle;
+};
+
+&mdio1 {
+	/delete-node/ phy@0;
+	/delete-node/ phy@1;
+	/delete-node/ phy@2;
+	/delete-node/ phy@3;
+};
+
+/* The PHY ID is HARD-CODED here on purpose -- do not "simplify" this back to a
+ * bare ethernet-phy-ieee802.3-c22.
+ *
+ * With the generic compatible, phylib probes the ID itself, and on this board the
+ * FIRST MDIO read after the PHY reset comes back 0xffff because the MAE0621A is
+ * not out of reset yet. Register 3 then reads correctly, so phylib computed:
+ *
+ *     /sys/bus/mdio_bus/devices/stmmac-1:00/phy_id = 0xffff4411
+ *                                                     ^^^^ reg 2 lost
+ *
+ * against the driver's 0x7b744411 / mask 0x7fffffff:
+ *     (0xffff4411 ^ 0x7b744411) & 0x7fffffff = 0x048b0000  -> no match
+ * so it fell back to "Generic PHY". genphy then hangs in genphy_soft_reset()
+ * polling BMCR_RESET on this paged part, which surfaced as
+ *     ip link set eth0 up -> RTNETLINK answers: Connection timed out
+ *
+ * (Re-reading the same registers later works fine -- `mdio stmmac-1 phy 0 raw 2`
+ * returns 0x7b74 and `raw 3` returns 0x4411 -- confirming it is purely a
+ * reset-timing race on the first read, not a wiring or address problem.)
+ *
+ * "ethernet-phy-idAAAA.BBBB" makes of_mdiobus_register() construct the phy_device
+ * with that exact id and skip the probe, so the MAE0621A driver binds
+ * deterministically no matter how slow the PHY is to wake. AAAA = register 2,
+ * BBBB = register 3. The c22 string is kept as the documented fallback. */
+&mdio1 {
+	sz3568_gmac1_phy: ethernet-phy@0 {
+		compatible = "ethernet-phy-id7b74.4411",
+			     "ethernet-phy-ieee802.3-c22";
+		reg = <0x0>;
+	};
+};
+
 &gmac1 {
-	/* Wired ethernet abandoned: the crystal-less GbE PHY needs the Rockchip
-	 * loader's gmac output-mode pin setup, which mainline U-Boot + this kernel
-	 * driver cannot reproduce. Disable gmac1 so it stops spamming "Failed to
-	 * reset the dma" on the console every retry. Connectivity is via RTL8723DS
-	 * WiFi instead. (The clk_mac1_out output-mode experiment -- kernel patch
-	 * 0005 + a clocks override here -- is removed; it never woke the PHY.) */
-	status = "disabled";
+	phy-handle = <&sz3568_gmac1_phy>;
 };

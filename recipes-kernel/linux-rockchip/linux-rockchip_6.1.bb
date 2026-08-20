@@ -38,12 +38,25 @@ SRC_URI += "file://0001-soc-rockchip-pm_domains-do-not-panic-on-idle-ack-timeout
 # (vendor defconfig leaves CONFIG_BLK_DEV_DM off -> "Failed mounting bundle").
 SRC_URI += "file://dm-verity.cfg"
 
-# NOTE: wired ethernet (gmac1) was abandoned -- the board's crystal-less GbE PHY
-# needs the Rockchip vendor loader's gmac output-mode pin setup, which mainline
-# U-Boot + this kernel driver can't reproduce (a clk_mac1_out driver patch was
-# tried and never woke the PHY). gmac1 is disabled in the board DTS; connectivity
-# is RTL8723DS WiFi. If ethernet is ever revisited, the vendor U-Boot graft is the
-# known-good path (see the WiFi/ethernet notes in the layer history).
+# Wired ethernet (gmac1): the PHY is a Maxio MAE0621A, and this BSP has NO driver
+# for it (drivers/net/phy has no maxio.c), so phylib fell back to genphy. genphy
+# never runs the MAE0621A's clock-mode init -- maxio_mae0621a_clk_init() flips
+# BIT(8) of page 0xd92 reg 0x02, which is what makes this PHY source the 125 MHz
+# RGMII clock -- so the PHY stayed dark, MDIO read 0xffff and the GMAC DMA reset
+# hung. That is what the earlier "needs the vendor U-Boot loader / clock_in_out
+# output mode" theory was actually chasing; the clk_mac1_out experiment failed
+# because the missing piece was in the PHY, not the SoC clock tree.
+#
+# Guangdong Hpraise supplied maxio.c (MAXIO_PHY_VER v1.8.1.4) plus the gmac1 DT
+# node, which already matches our rk3568-sz3568-v10.dtsi verbatim (clock_in_out =
+# "input", tx_delay 0x4f, rx_delay left out). So only the driver was missing.
+#
+# Two fixes were needed to the vendor source: lines 329 and 396 had "# LED" at
+# column 0, which C treats as an invalid preprocessor directive rather than a
+# comment; they are now /* LED */.
+SRC_URI += "file://maxio.c"
+SRC_URI += "file://0003-net-phy-add-Maxio-MAE0621A-PHY-driver.patch"
+SRC_URI += "file://ethernet-maxio.cfg"
 
 # GPU: panfrost/Mesa was tried and HARD-HANGS this vendor kernel/board (panfrost
 # locks the CPU on GPU power-on). The vendor's working image uses the proprietary
@@ -76,6 +89,11 @@ do_configure:prepend() {
         ${S}/arch/arm64/boot/dts/rockchip/rk3568-sz3568-linux.dts
     install -m 0644 ${UNPACKDIR}/rk3568-sz3568.dts \
         ${S}/arch/arm64/boot/dts/rockchip/rk3568-sz3568.dts
+
+    # Maxio MAE0621A PHY driver. Shipped as a plain file rather than inside the
+    # patch so the vendor blob stays readable/diffable against future Hpraise
+    # drops; patch 0003 only adds its Kconfig + Makefile entries.
+    install -m 0644 ${UNPACKDIR}/maxio.c ${S}/drivers/net/phy/maxio.c
 }
 
 # No separate kernel-metadata repo.

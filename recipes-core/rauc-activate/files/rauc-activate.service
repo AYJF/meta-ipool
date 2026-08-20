@@ -1,0 +1,10 @@
+[Unit]
+Description=Activate a staged RAUC update (reboot if one is pending)
+# rauc must be able to answer, and there is no point running before the updater
+# has had a chance to stage anything.
+After=rauc.service rauc-hawkbit-updater.service
+ConditionPathExists=/usr/bin/rauc-activate
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/rauc-activate

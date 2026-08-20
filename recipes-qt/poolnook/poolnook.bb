@@ -6,11 +6,29 @@ Installed as the board's single fullscreen app: /usr/bin/b2qt -> appPoolnook, so
 b2qt.service launches it on eglfs (hardware GPU via libmali) at boot."
 LICENSE = "CLOSED"
 
-# Build from the local private checkout (no network fetch). Slimmed copy at:
-#   /yocto_tutorial/rockchip/local_repos/poolnook-firmware  (.git + NDI removed)
+# Build from the local private checkout (no network fetch).
+#
+# This is a developer-machine path, so it is a weak assignment: override
+# POOLNOOK_SRC in build-*/conf/local.conf on any host where the checkout lives
+# somewhere else, rather than editing this recipe. If the directory does not
+# exist, externalsrc fails in externalsrc_configure_prefunc while creating its
+# oe-workdir symlink ("FileNotFoundError ... -> .../oe-workdir"), which is what
+# a stale hardcoded path used to produce here.
+POOLNOOK_SRC ?= "/home/ayjf/Documents/Qt_projects/poolnook-firmware"
+
 inherit qt6-cmake externalsrc
-EXTERNALSRC = "/yocto_tutorial/rockchip/local_repos/poolnook-firmware"
+EXTERNALSRC = "${POOLNOOK_SRC}"
 EXTERNALSRC_BUILD = "${WORKDIR}/build"
+
+# Fail early with a readable message instead of a Python traceback from
+# externalsrc if the checkout is missing.
+python () {
+    src = d.getVar('EXTERNALSRC') or ''
+    if not os.path.isdir(src):
+        raise bb.parse.SkipRecipe(
+            "POOLNOOK_SRC does not exist: '%s'. Point POOLNOOK_SRC at the "
+            "poolnook-firmware checkout in conf/local.conf." % src)
+}
 
 # Qt6 modules the app find_package()s + the native QML tooling (qmlimportscanner,
 # qmlcachegen, shader tools) needed to build the qt_add_qml_module.

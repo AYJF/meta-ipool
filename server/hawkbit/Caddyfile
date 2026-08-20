@@ -1,0 +1,64 @@
+# Caddy obtains and renews the Let's Encrypt certificate automatically; there is
+# no certbot or cron to wire up. It also redirects :80 -> :443 by default.
+{
+	email {$ACME_EMAIL}
+}
+
+{$HAWKBIT_DOMAIN} {
+	# Large .raucb uploads/downloads: our bundle is ~356 MB, so do not let the
+	# proxy buffer it or time out mid-transfer.
+	request_body {
+		max_size 2GB
+	}
+
+	# --- iPool theme assets, served straight off disk ----------------------
+	# Must come BEFORE the catch-all UI route, and must NOT be proxied.
+	handle /_ipool/* {
+		root * /srv/theme
+		uri strip_prefix /_ipool
+		file_server
+		header Cache-Control "public, max-age=300"
+	}
+
+	# --- hawkBit's own paths ------------------------------------------------
+	# /DEFAULT/* is the DDI endpoint the boards poll. Deliberately NOT themed
+	# and NOT body-rewritten -- device traffic must stay byte-exact.
+	@api path /rest/* /DEFAULT/* /swagger-ui/* /v3/api-docs/* /v3/api-docs /actuator/*
+	handle @api {
+		reverse_proxy hawkbit:8080 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+			transport http {
+				read_timeout 30m
+				write_timeout 30m
+			}
+		}
+	}
+
+	# --- Management UI, with the theme injected ----------------------------
+	handle {
+		# Rewrite the Vaadin index.html to pull in our stylesheet. The UI is a
+		# Vaadin app, so there is no HTML of ours to edit -- this is the only
+		# hook. Scoped to text/html so JS bundles and fonts pass untouched.
+		replace {
+			match {
+				header Content-Type "text/html*"
+			}
+			re "</head>" "<link rel=\"stylesheet\" href=\"/_ipool/ipool.css\"><script src=\"/_ipool/ipool.js\"></script></head>"
+		}
+		reverse_proxy simple-ui:8088 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+			# replace_response needs an unencoded body to rewrite, so ask the
+			# upstream not to compress this hop. Caddy re-compresses on the way
+			# out via the encode directive below.
+			header_up -Accept-Encoding
+			transport http {
+				read_timeout 30m
+				write_timeout 30m
+			}
+		}
+	}
+
+	encode zstd gzip
+}

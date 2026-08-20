@@ -1,8 +1,10 @@
-# editor / OS cruft
-*~
-*.swp
-*.orig
-*.rej
-.DS_Store
-__pycache__/
-*.pyc
+# Never commit RAUC signing material or server secrets. The CA key, the bundle
+# signing key, the hawkBit admin password and the gateway token all live OUTSIDE
+# this repo (rockchip/secrets/, see README "Secrets you must carry").
+# Only the CA *certificate* is tracked -- it is public by design.
+*.key.pem
+*.key
+*.env
+.env
+!.env.example
+!recipes-core/rauc/files/ipool-ca.cert.pem

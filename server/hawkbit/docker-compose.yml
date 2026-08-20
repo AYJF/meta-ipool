@@ -1,0 +1,138 @@
+# hawkBit update server for the iPool SZ3568 fleet.
+#
+# ARCHITECTURE: x86_64 ONLY. hawkbit/hawkbit-update-server is published as a
+# SINGLE-ARCH amd64 image (verified: docker image inspect -> Architecture: amd64);
+# there is no arm64 variant. mariadb and caddy are multi-arch, but hawkBit is the
+# one that matters, so Hetzner's cheaper CAX / Ampere ARM instances CANNOT run this
+# stack without building hawkBit for arm64 from source. Use an x86 instance
+# (Hetzner CPX21 in Ashburn/Hillsboro, or any amd64 VPS).
+#
+#
+# Topology:  board --HTTPS 443--> caddy --http--> hawkbit --> mariadb
+# Only Caddy is published to the host. hawkBit and MariaDB stay on the internal
+# docker network, so hawkBit's port 8080 is never reachable from the internet.
+services:
+  mariadb:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: hawkbit
+      MARIADB_USER: hawkbit
+      MARIADB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [internal]
+
+  hawkbit:
+    image: hawkbit/hawkbit-update-server:${HAWKBIT_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      # PROFILES selects the database. The image DEFAULTS TO "h2", i.e. an
+      # IN-MEMORY database -- every target registration, rollout and deployment
+      # record is lost when the container is replaced. Setting the datasource
+      # properties alone is NOT enough; without this the log says
+      # 'The following 1 profile is active: "h2"'.
+      # application-mysql.properties in the image sets spring.jpa.database=MYSQL
+      # and the org.mariadb.jdbc.Driver, and mariadb-java-client is bundled.
+      PROFILES: mysql
+      SPRING_DATASOURCE_URL: jdbc:mariadb://mariadb:3306/hawkbit
+      SPRING_DATASOURCE_USERNAME: hawkbit
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      # CRITICAL behind a TLS reverse proxy. Without this hawkBit builds artifact
+      # download URLs from its own view of the request and hands the device
+      # http://... links, which then fail or silently downgrade. NATIVE makes
+      # Spring honour Caddy's X-Forwarded-Proto/Host.
+      SERVER_FORWARDHEADERSSTRATEGY: NATIVE
+      # Heap: use X_MS/X_MX, NOT JAVA_OPTS. The entrypoint is
+      #   java ${JAVA_OPTS} ... -Xms${X_MS} -Xmx${X_MX} ...
+      # so the image's own defaults (768m) are appended AFTER JAVA_OPTS and win.
+      X_MS: 256m
+      X_MX: 1200m
+      # Same multipart limits -- hawkBit receives the artifact forwarded from the
+      # UI, and REST clients (curl / CI) post directly here.
+      SPRING_SERVLET_MULTIPART_MAXFILESIZE: 2GB
+      SPRING_SERVLET_MULTIPART_MAXREQUESTSIZE: 2GB
+      # --- Security -------------------------------------------------------
+      # The image ships hawkbit.security.user.admin.password={noop}admin, i.e.
+      # admin/admin, and hawkBit 1.x has NO web login page -- the REST API is
+      # reachable directly, so default creds on a public host are an open door.
+      # Overridden with a bcrypt hash; plaintext lives in
+      # secrets/hawkbit-admin-password, never here and never in git.
+      HAWKBIT_SECURITY_USER_ADMIN_PASSWORD: "{bcrypt}${ADMIN_PW_BCRYPT}"
+      HAWKBIT_SECURITY_USER_ADMIN_TENANT: DEFAULT
+      HAWKBIT_SECURITY_USER_ADMIN_ROLES: TENANT_ADMIN
+      # Gateway-token auth for the DDI endpoint: off by default in the image.
+      # rauc-hawkbit-updater on the boards authenticates with this scheme. The
+      # token VALUE is per-tenant config, set over REST (not an env var).
+      HAWKBIT_SERVER_DDI_SECURITY_AUTHENTICATION_GATEWAYTOKEN_ENABLED: "true"
+    volumes:
+      # Uploaded .raucb artifacts. Without this they vanish on container replace.
+      - hawkbit-artifacts:/artifactrepo
+    networks: [internal]
+
+  # hawkBit 1.x removed the built-in Vaadin management UI -- the update server is
+  # now REST + Swagger only. This is the separate UI component. It talks to the
+  # mgmt API SERVER-SIDE over the internal network (Feign client), so nothing is
+  # exposed and there are no CORS concerns; the browser only ever talks to Caddy.
+  simple-ui:
+    image: hawkbit/hawkbit-simple-ui:latest
+    restart: unless-stopped
+    depends_on: [hawkbit]
+    environment:
+      # Prefix is hawkbit.server (org.eclipse.hawkbit.sdk.HawkbitServer:
+      # fields mgmtUrl + ddiUrl). Internal URLs -- these are container-to-
+      # container, never seen by the browser.
+      HAWKBIT_SERVER_MGMTURL: http://hawkbit:8080
+      HAWKBIT_SERVER_DDIURL: http://hawkbit:8080
+      # Same reason as on the hawkbit service: without this the UI issues its
+      # login redirect as http:// (it only sees Caddy's plaintext hop), causing an
+      # extra round trip through Caddy's 308 and a brief plaintext request.
+      SERVER_FORWARDHEADERSSTRATEGY: NATIVE
+      # NB: its application.properties is server.port=${PORT:8088}, so it listens
+      # on 8088 despite the image EXPOSEing 8080.
+      PORT: "8088"
+      # Third JVM on a 4 GB box -- keep it small (hawkBit has 1200m, MariaDB ~400m).
+      X_MS: 128m
+      X_MX: 768m
+      # Spring Boot defaults to max-file-size=1MB / max-request-size=10MB, so a
+      # 356MB .raucb fails with MaxUploadSizeExceededException -- which the UI
+      # surfaces unhelpfully as "Upload forbidden".
+      SPRING_SERVLET_MULTIPART_MAXFILESIZE: 2GB
+      SPRING_SERVLET_MULTIPART_MAXREQUESTSIZE: 2GB
+    networks: [internal]
+
+  caddy:
+    image: caddy-replace:local
+    build: ./caddy
+    restart: unless-stopped
+    depends_on: [hawkbit, simple-ui]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      HAWKBIT_DOMAIN: ${HAWKBIT_DOMAIN:?set HAWKBIT_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./theme:/srv/theme:ro
+      - caddy-data:/data      # Let's Encrypt certs+keys; MUST persist or you will
+      - caddy-config:/config  # hit LE rate limits on every container restart
+    networks: [internal]
+
+volumes:
+  mariadb-data:
+  hawkbit-artifacts:
+  caddy-data:
+  caddy-config:
+
+networks:
+  internal:

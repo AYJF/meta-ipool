@@ -1,0 +1,72 @@
+/* iPool theme for the hawkBit simple UI.
+ *
+ * The UI is a Vaadin app: its components are web components with shadow DOM, so
+ * you cannot restyle their internals from outside. What DOES cross the shadow
+ * boundary is CSS custom properties -- Vaadin's Lumo theme is built entirely on
+ * them, so overriding the tokens on :root restyles the whole app consistently.
+ * That is the leverage this file uses; it is a re-skin, not a redesign.
+ */
+
+:root {
+  /* --- Brand: pool water teal ------------------------------------------ */
+  --lumo-primary-color:        #0d9488;
+  --lumo-primary-color-50pct:  rgba(13, 148, 136, 0.5);
+  --lumo-primary-color-10pct:  rgba(13, 148, 136, 0.1);
+  --lumo-primary-text-color:   #0f766e;
+  --lumo-primary-contrast-color: #ffffff;
+
+  /* --- Type: system UI stack, no webfont download ---------------------- */
+  --lumo-font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+                      Roboto, "Helvetica Neue", Arial, sans-serif;
+  --lumo-font-size-m: 0.9375rem;
+
+  /* --- Softer geometry than Lumo's default ----------------------------- */
+  --lumo-border-radius-s: 0.375rem;
+  --lumo-border-radius-m: 0.625rem;
+  --lumo-border-radius-l: 1rem;
+
+  /* Slightly tighter vertical rhythm -- more rows visible per screen,
+     which is what you actually want on a target list. */
+  --lumo-size-m: 2.25rem;
+  --lumo-space-m: 0.875rem;
+}
+
+/* --- Dark mode ------------------------------------------------------------
+ * Vaadin switches theme via a `theme="dark"` attribute on <html>, not media
+ * queries, so the injected script sets it from prefers-color-scheme. These are
+ * the token overrides that apply once it does.
+ */
+html[theme~="dark"] {
+  --lumo-primary-color:      #14b8a6;
+  --lumo-primary-text-color: #5eead4;
+  --lumo-base-color:         #0f172a;
+  --lumo-tint-5pct:          rgba(255, 255, 255, 0.05);
+}
+
+/* --- Chrome ---------------------------------------------------------------
+ * The app header. ::part() is the sanctioned way into a Vaadin component's
+ * shadow DOM; anything not exposed as a part is off limits by design.
+ */
+vaadin-app-layout::part(navbar) {
+  background: linear-gradient(90deg, #0f766e 0%, #0d9488 100%);
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+vaadin-app-layout::part(navbar) a,
+vaadin-app-layout::part(navbar) h1,
+vaadin-app-layout::part(navbar) span {
+  color: #ffffff;
+}
+
+/* Grids: quieter borders, clearer hover -- the target list is the screen you
+   spend the most time reading. */
+vaadin-grid {
+  --lumo-contrast-10pct: rgba(15, 118, 110, 0.08);
+  border: 1px solid var(--lumo-contrast-10pct);
+  border-radius: var(--lumo-border-radius-m);
+  overflow: hidden;
+}
+
+vaadin-button[theme~="primary"] {
+  box-shadow: 0 1px 2px rgba(13, 148, 136, 0.35);
+}

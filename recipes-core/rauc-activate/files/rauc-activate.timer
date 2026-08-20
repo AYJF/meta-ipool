@@ -1,0 +1,18 @@
+[Unit]
+Description=Nightly check for a staged RAUC update
+
+[Timer]
+# 03:00 local time. The board's timezone is set to America/New_York by the
+# Poolnook app, so this is genuinely the middle of the night for the customer --
+# no swimmers, no heating call, and any equipment left latched is supervised
+# again within a minute.
+OnCalendar=*-*-* 03:00:00
+# Spread the fleet out so a thousand controllers do not all reboot, and all
+# re-poll hawkBit, in the same second.
+RandomizedDelaySec=1800
+# If the board was powered off at 03:00, run once shortly after it next boots
+# rather than waiting a whole day.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
